@@ -11,7 +11,6 @@ from sklearn.cluster import DBSCAN
 # Set up argument parsing for the script
 parser = argparse.ArgumentParser(description="Detect and group trails in a single FITS image.")
 parser.add_argument('fits_file_path', type=str, help="Path to the FITS file")
-parser.add_argument('output_dir', type=str, help="Path to the directory where trail PNG will be saved")
 args = parser.parse_args()
 
 # Hough and Canny edge detection parameters
@@ -24,7 +23,6 @@ hough_minLineLength = 500
 hough_maxLineGap = 30
 
 # Ensure the output directory exists
-os.makedirs(args.output_dir, exist_ok=True)
 
 # Open the FITS file and load the image data
 fits_file = args.fits_file_path
@@ -123,8 +121,7 @@ plt.ylabel("Y pixel")
 plt.colorbar()
 
 # Save the plot as a PNG in the output directory
-output_png_path = os.path.join(args.output_dir, f"{os.path.splitext(os.path.basename(fits_file))[0]}_merged.png")
-plt.savefig(output_png_path, dpi=300, bbox_inches='tight')
+plt.savefig(f"{os.path.splitext(os.path.basename(fits_file))[0]}_merged.png", dpi=300, bbox_inches='tight')
 plt.close()
 
 # Summary of results

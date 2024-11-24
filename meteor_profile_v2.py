@@ -1,4 +1,5 @@
 import numpy as np
+import argparse
 from astropy.io import fits
 from astropy.visualization import ImageNormalize, PercentileInterval, SqrtStretch
 from scipy.ndimage import map_coordinates
@@ -16,9 +17,13 @@ def extend_to_boundary(x, y, dx, dy, width, height):
     x_max, y_max = x + t_max * dx, y + t_max * dy
     return x_min, y_min, x_max, y_max
 
+parser = argparse.ArgumentParser(description="Detect and group trails in a single FITS image.")
+parser.add_argument('fits_file_path', type=str, help="Path to the FITS file")
+args = parser.parse_args()
+
 # Load FITS file
-# testing/frame-g-000259-5-0463.fits
-with fits.open('testing/frame-g-000211-4-0364.fits') as hdul:
+fits_file = args.fits_file_path
+with fits.open(fits_file) as hdul:
     data = hdul[0].data
 
 # Define global minimum and maximum brightness values from the entire image for normalization
@@ -28,8 +33,12 @@ global_max_brightness = np.max(data)
 # Define original start and end points of the main line
 #x0, y0 = 1639, 771
 #x1, y1 = 1737, 1391
-x0, y0 = 1133, 347
-x1, y1 = 1837, 576
+#x0, y0 = 1133, 347
+#x1, y1 = 1837, 576
+# filter i
+# (742, 950, 1406, 1245)
+x0, y0 = 742, 950
+x1, y1 = 1406, 1245
 
 # Calculate direction vector of the main line
 dx = x1 - x0
@@ -108,8 +117,8 @@ plt.axvline(num_samples // 2, color='red', linestyle='--', label='Intersection P
 plt.xlabel('Position along short perpendicular line')
 plt.ylabel('Normalized Pixel Brightness (0 to 1)')
 plt.title('Overlayed Normalized Brightness Profiles for All Short Perpendicular Lines')
+plt.savefig("meteor_profile_separated.png", dpi=300, bbox_inches='tight')
 plt.legend()
-plt.show()
 
 # Calculate the unified brightness profile along the main line by averaging across the perpendicular lines
 unified_brightness_profile = np.mean(perpendicular_brightness_profiles, axis=0)
@@ -123,11 +132,9 @@ plt.ylabel('Normalized Pixel Brightness (0 to 1)')
 plt.title('Unified Brightness Profile Along the Main Line')
 plt.legend()
 plt.savefig("meteor_profile_unified.png", dpi=300, bbox_inches='tight')
-plt.show()
 
 # Display the overlay of all lines on the FITS image
 ax.legend()
 plt.title('FITS Image with Extended Main and Short Perpendicular Lines')
 plt.xlabel('X Pixel')
 plt.ylabel('Y Pixel')
-plt.show()
