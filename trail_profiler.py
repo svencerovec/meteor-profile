@@ -152,3 +152,30 @@ class TrailProfiler:
         plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.close()
         print(f"Saved divided image to {output_file}")
+    
+    def save_combined_median_profile(self, brightness_profiles, profile_name):
+        """
+        Calculate and save the combined median profile from all brightness profiles as a plot.
+        :param brightness_profiles: List of brightness profiles for each perpendicular line.
+        :param profile_name: Name for the saved profile file.
+        """
+        if not brightness_profiles:
+            raise ValueError("No brightness profiles provided for median calculation.")
+
+        # Compute the median profile
+        profiles_array = np.vstack(brightness_profiles)
+        median_profile = np.median(profiles_array, axis=0)
+
+        # Save the plot
+        output_file = os.path.join(self.output_dir, f"{profile_name}_median.png")
+        plt.figure(figsize=(12, 8))
+        plt.plot(median_profile, label='Combined Median Profile', color='blue')
+        plt.axvline(len(median_profile) // 2, color='red', linestyle='--', label='Intersection Point')
+        plt.xlabel('Position along perpendicular line')
+        plt.ylabel('Normalized Brightness (0-1)')
+        plt.title(f'Combined Median Profile: {profile_name}')
+        plt.legend()
+        plt.savefig(output_file, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        print(f"Saved combined median profile plot to {output_file}")

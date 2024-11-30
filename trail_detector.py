@@ -29,7 +29,7 @@ class TrailDetector:
             image_data = hdul[0].data
 
         # Normalize the image for processing
-        norm = ImageNormalize(image_data, interval=PercentileInterval(1, 99), stretch=SqrtStretch())
+        norm = ImageNormalize(image_data, interval=PercentileInterval(1, 90), stretch=SqrtStretch())
         normalized_image = norm(image_data)
 
         # Convert normalized image to 8-bit grayscale
@@ -109,3 +109,17 @@ class TrailDetector:
             plt.savefig(output_file, dpi=300, bbox_inches='tight')
         plt.show()
 
+    def save_merged_lines(self, output_file):
+        """
+        Save the merged lines to a text file.
+        :param output_file: Path to the output text file.
+        """
+        if not self.merged_lines:
+            print("No merged lines to save.")
+            return
+
+        with open(output_file, 'w') as f:
+            f.write("x1, y1, x2, y2\n")
+            for line in self.merged_lines:
+                f.write(f"{line[0]}, {line[1]}, {line[2]}, {line[3]}\n")
+        print(f"Merged lines saved to {output_file}")
