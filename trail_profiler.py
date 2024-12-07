@@ -162,9 +162,15 @@ class TrailProfiler:
         if not brightness_profiles:
             raise ValueError("No brightness profiles provided for median calculation.")
 
-        # Compute the median profile
+
         profiles_array = np.vstack(brightness_profiles)
         median_profile = np.median(profiles_array, axis=0)
+
+        # Re-normalize the median_profile to be within [0, 1]
+        min_val = np.min(median_profile)
+        max_val = np.max(median_profile)
+        median_profile = (median_profile - min_val) / (max_val - min_val)
+
 
         # Save the plot
         output_file = os.path.join(self.output_dir, f"{profile_name}_median.png")
@@ -179,3 +185,45 @@ class TrailProfiler:
         plt.close()
 
         print(f"Saved combined median profile plot to {output_file}")
+        return median_profile
+
+    def evaluate_profile_shape(self, profile, fwhm_threshold_ratio=0.1):
+        """
+        Evaluate whether the profile is more like a "spike" or "wide".
+        Uses the Full Width at Half Maximum (FWHM) as a metric.
+        
+        :param profile: 1D array of normalized brightness values.
+        :param fwhm_threshold_ratio: Threshold ratio of FWHM to the total length of the profile 
+                                    to determine if it's a spike or wide.
+        :return: "spike" if the profile narrows quickly around the peak, "wide" otherwise.
+        """
+        # Find the peak
+        peak_index = np.argmax(profile)
+        peak_value = profile[peak_index]
+        
+        if peak_value == 0:
+            # If the entire profile is flat and at 0, it's neither spike nor wide; return "flat"
+            return "flat"
+        
+        # Compute the half-maximum
+        half_max = peak_value / 2.0
+        
+        # Find left index for half_max
+        left_idx = peak_index
+        while left_idx > 0 and profile[left_idx] > half_max:
+            left_idx -= 1
+        
+        # Find right index for half_max
+        right_idx = peak_index
+        while right_idx < len(profile)-1 and profile[right_idx] > half_max:
+            right_idx += 1
+        
+        # Compute FWHM
+        fwhm = right_idx - left_idx
+        
+        # Decide if it's a spike or wide
+        total_length = len(profile)
+        if fwhm < total_length * fwhm_threshold_ratio:
+            return "spike"
+        else:
+            return "wide"
