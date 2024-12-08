@@ -153,58 +153,99 @@ class TrailProfiler:
         plt.close()
         print(f"Saved divided image to {output_file}")
     
-    def save_combined_median_profile(self, brightness_profiles, profile_name):
-        """
-        Calculate and save the combined median profile from all brightness profiles as a plot.
-        :param brightness_profiles: List of brightness profiles for each perpendicular line.
-        :param profile_name: Name for the saved profile file.
-        """
+    def get_combined_median_profile(self, brightness_profiles, profile_name, save_median_profile = False):
         if not brightness_profiles:
             raise ValueError("No brightness profiles provided for median calculation.")
-
 
         profiles_array = np.vstack(brightness_profiles)
         median_profile = np.median(profiles_array, axis=0)
 
-        # Re-normalize the median_profile to be within [0, 1]
-        min_val = np.min(median_profile)
-        max_val = np.max(median_profile)
-        median_profile = (median_profile - min_val) / (max_val - min_val)
+        if save_median_profile:
+            output_file = os.path.join(self.output_dir, f"{profile_name}_median.png")
+            plt.figure(figsize=(12, 8))
+            plt.plot(median_profile, label='Combined Median Profile', color='blue')
+            plt.axvline(len(median_profile) // 2, color='red', linestyle='--', label='Intersection Point')
+            plt.xlabel('Position along perpendicular line')
+            plt.ylabel('Normalized Brightness (0-1)')
+            plt.title(f'Combined Median Profile: {profile_name}')
+            plt.legend()
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            plt.close()
+            print(f"Saved combined median profile plot to {output_file}")
 
-
-        # Save the plot
-        output_file = os.path.join(self.output_dir, f"{profile_name}_median.png")
-        plt.figure(figsize=(12, 8))
-        plt.plot(median_profile, label='Combined Median Profile', color='blue')
-        plt.axvline(len(median_profile) // 2, color='red', linestyle='--', label='Intersection Point')
-        plt.xlabel('Position along perpendicular line')
-        plt.ylabel('Normalized Brightness (0-1)')
-        plt.title(f'Combined Median Profile: {profile_name}')
-        plt.legend()
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        plt.close()
-
-        print(f"Saved combined median profile plot to {output_file}")
         return median_profile
 
-    def evaluate_profile_shape(self, profile, fwhm_threshold_ratio=0.1):
+    def note_median_profile_type(self, median_profile):
         """
-        Evaluate whether the profile is more like a "spike" or "wide".
-        Uses the Full Width at Half Maximum (FWHM) as a metric.
+        Given a median_profile, determine whether it is "spike" or "wide" and record 
+        the FITS filename in the respective text file. If it's flat or invalid, do nothing.
+
+        :param median_profile: The median brightness profile array returned by save_combined_median_profile.
+        """
+        # If median_profile is empty or None, do nothing
+        if median_profile is None or len(median_profile) == 0:
+            return
+
+        # Evaluate the profile shape
+        profile_shape = self.evaluate_profile_shape(median_profile)
+        print(profile_shape)
+
+        # If the profile is flat, do nothing
+        if profile_shape == "flat":
+            return
+
+        # Write only the FITS filename to the corresponding text file based on shape
+        fits_name = os.path.basename(self.fits_file)
+        if profile_shape == "spike":
+            with open("spiky_profiles.txt", "a") as f:
+                f.write(f"{fits_name}\n")
+        elif profile_shape == "wide":
+            with open("wide_profiles.txt", "a") as f:
+                f.write(f"{fits_name}\n")
+
+
+    def evaluate_profile_shape(self, profile, fwhm_threshold_ratio=0.5):
+        """
+        Evaluate the profile shape with a more robust check:
+        - The profile should have a peak somewhere near the middle.
+        - The profile should descend away from that peak as we move toward the edges.
+        - If these conditions are not met, we return "flat".
         
         :param profile: 1D array of normalized brightness values.
-        :param fwhm_threshold_ratio: Threshold ratio of FWHM to the total length of the profile 
-                                    to determine if it's a spike or wide.
-        :return: "spike" if the profile narrows quickly around the peak, "wide" otherwise.
+        :param fwhm_threshold_ratio: Threshold ratio of FWHM to the total length for "spike" vs "wide".
+        :return: "spike", "wide", or "flat"
         """
+        total_length = len(profile)
+
         # Find the peak
-        peak_index = np.argmax(profile)
+        peak_index = len(profile) // 2
         peak_value = profile[peak_index]
+
+        # Check if there's a meaningful peak
+        if peak_value <= 0:
+            # If peak <= 0, it's essentially non-informative
+            return "flat1"
         
-        if peak_value == 0:
-            # If the entire profile is flat and at 0, it's neither spike nor wide; return "flat"
-            return "flat"
+        # Ensure the peak is not too close to the edges.
+        # A good heuristic: peak should lie within the central 50% of the profile
+        # Adjust these fractions as needed.
+        left_bound = int(total_length * 0.20)
+        right_bound = int(total_length * 0.80)
+        if peak_index < left_bound or peak_index > right_bound:
+            # Peak too close to edges, not a good trail shape
+            return "flat2"
+
+        # Check that the edges are significantly lower than the peak
+        # For instance, require that both ends (first and last 10% of the profile)
+        # are on average less than half the peak value.
         
+        edge_fraction = int(total_length * 0.2)
+        left_edge_mean = np.mean(profile[:edge_fraction])
+        right_edge_mean = np.mean(profile[-edge_fraction:])
+        if left_edge_mean > peak_value / 1.01 or right_edge_mean > peak_value / 1.01:
+            # Edges are not substantially lower than the peak
+            return "flat3"
+
         # Compute the half-maximum
         half_max = peak_value / 2.0
         
@@ -212,17 +253,16 @@ class TrailProfiler:
         left_idx = peak_index
         while left_idx > 0 and profile[left_idx] > half_max:
             left_idx -= 1
-        
+
         # Find right index for half_max
         right_idx = peak_index
-        while right_idx < len(profile)-1 and profile[right_idx] > half_max:
+        while right_idx < total_length - 1 and profile[right_idx] > half_max:
             right_idx += 1
-        
+
         # Compute FWHM
         fwhm = right_idx - left_idx
-        
-        # Decide if it's a spike or wide
-        total_length = len(profile)
+
+        # Decide if it's a spike or wide based on FWHM
         if fwhm < total_length * fwhm_threshold_ratio:
             return "spike"
         else:
