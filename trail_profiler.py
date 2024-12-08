@@ -175,12 +175,10 @@ class TrailProfiler:
 
         return median_profile
 
-    def note_median_profile_type(self, median_profile):
+    def note_median_profile_type(self, median_profile, line):
         """
-        Given a median_profile, determine whether it is "spike" or "wide" and record 
-        the FITS filename in the respective text file. If it's flat or invalid, do nothing.
-
-        :param median_profile: The median brightness profile array returned by save_combined_median_profile.
+        Given a median_profile and the line coordinates, determine whether it is "spike" or "wide"
+        and record the FITS filename along with the line coordinates in the respective text file.
         """
         # If median_profile is empty or None, do nothing
         if median_profile is None or len(median_profile) == 0:
@@ -194,14 +192,16 @@ class TrailProfiler:
         if profile_shape == "flat":
             return
 
-        # Write only the FITS filename to the corresponding text file based on shape
         fits_name = os.path.basename(self.fits_file)
+        x1, y1, x2, y2 = line
+
         if profile_shape == "spike":
             with open("spiky_profiles.txt", "a") as f:
-                f.write(f"{fits_name}\n")
+                f.write(f"{fits_name} {x1} {y1} {x2} {y2}\n")
         elif profile_shape == "wide":
             with open("wide_profiles.txt", "a") as f:
-                f.write(f"{fits_name}\n")
+                f.write(f"{fits_name} {x1} {y1} {x2} {y2}\n")
+
 
 
     def evaluate_profile_shape(self, profile, fwhm_threshold_ratio=0.5):

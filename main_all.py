@@ -7,7 +7,8 @@ import glob
 detector = TrailDetector()
 
 # Iterate through all FITS files in the testing directory
-fits_dir = "testing"
+#fits_dir = "/media/sf_SharedUbuntu/unzipped_frame_files/"
+fits_dir = "testing/"
 fits_files = glob.glob(os.path.join(fits_dir, "*.fits"))
 
 for fits_file in fits_files:
@@ -27,7 +28,7 @@ for fits_file in fits_files:
         brightness_profiles, line_coordinates = profiler.analyze_perpendicular_lines(line, num_perpendicular_lines=10)
         median_profile = profiler.get_combined_median_profile(brightness_profiles, fits_file)
         # Save the combined median profile (this now only writes FITS filenames to text files)
-        profiler.note_median_profile_type(median_profile)
+        profiler.note_median_profile_type(median_profile, line)
 
         # Not saving the brightness profiles plot
         # profiler.plot_brightness_profiles(brightness_profiles, f"trail_{i + 1}_profiles")
