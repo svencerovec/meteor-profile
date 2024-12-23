@@ -42,34 +42,66 @@ class TrailDetector:
         return []
 
     def _attempt_detection(self, fits_file, interval):
-        # Open and normalize the FITS file with given interval
+        # 1. Open and normalize the FITS file
         with fits.open(fits_file) as hdul:
             image_data = hdul[0].data
 
         norm = ImageNormalize(image_data, interval=PercentileInterval(*interval), stretch=SqrtStretch())
         normalized_image = norm(image_data)
 
-        # Convert normalized image to 8-bit grayscale
-        scaled_image = np.uint8(255 * (normalized_image - np.min(normalized_image)) /
-                                (np.max(normalized_image) - np.min(normalized_image)))
+        # 2. Convert to 8-bit grayscale
+        scaled_image = np.uint8(
+            255 * (normalized_image - np.min(normalized_image))
+            / (np.max(normalized_image) - np.min(normalized_image))
+        )
 
-        # Detect edges using Canny
+        # 3. Edge detection (Canny)
         edges = cv2.Canny(scaled_image, **self.canny_params)
 
-        # Detect lines using Hough Transform
-        lines = cv2.HoughLinesP(edges, **self.hough_params)
+        # ----------------------------------------------------
+        # 4. Connected-Components Filtering to remove small blobs
+        # ----------------------------------------------------
+        # Make sure 'edges' is a binary image (0 or 255).
+        # It's already mostly binary from Canny, but let's ensure it is
+        _, bin_edges = cv2.threshold(edges, 127, 255, cv2.THRESH_BINARY)
 
+        # Label each connected component
+        num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(
+            bin_edges, connectivity=8
+        )
+
+        # Choose a threshold based on how big your stars are vs. your line
+        min_area = 50  # You might need to adjust this
+
+        # Remove small components
+        for label_idx in range(1, num_labels):  # label 0 is the background
+            area = stats[label_idx, cv2.CC_STAT_AREA]
+            if area < min_area:
+                # Set those pixels to black in the binary mask
+                bin_edges[labels == label_idx] = 0
+
+        # This cleaned mask is what we'll pass to Hough
+        cleaned_edges = bin_edges.copy()
+
+        # ----------------------------------------------------
+        # 5. Hough Transform on the cleaned edge image
+        # ----------------------------------------------------
+        lines = cv2.HoughLinesP(
+            cleaned_edges,
+            **self.hough_params
+        )
         if lines is None:
             return []
 
-        # Extract line data and cluster using DBSCAN
+        # 6. Process, cluster, and merge lines
         lines_data = self._process_lines(lines)
         if len(lines_data) == 0:
             return []
 
-        # Perform grouping and merging
         merged = self._merge_lines(lines_data)
         return merged
+
+
 
     def _process_lines(self, lines):
         lines_data = []
