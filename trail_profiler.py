@@ -175,95 +175,62 @@ class TrailProfiler:
 
         return median_profile
 
-    def note_median_profile_type(self, median_profile, line):
+    def calculate_auc(self, profile):
         """
-        Given a median_profile and the line coordinates, determine whether it is "spike" or "wide"
-        and record the FITS filename along with the line coordinates in the respective text file.
+        Calculates the Area Under the Curve (AUC) of a normalized profile.
+        
+        Args:
+            profile (numpy.ndarray): The intensity profile of the trail.
+
+        Returns:
+            float: The calculated AUC.
         """
-        # If median_profile is empty or None, do nothing
-        if median_profile is None or len(median_profile) == 0:
-            return
+        profile = profile / np.max(profile)  # Normalize
+        return np.sum(profile)
 
-        # Evaluate the profile shape
-        profile_shape = self.evaluate_profile_shape(median_profile)
-        print(profile_shape)
-
-        # If the profile is flat, do nothing
-        if profile_shape == "flat":
-            return
-
-        fits_name = os.path.basename(self.fits_file)
-        x1, y1, x2, y2 = line
-
-        if profile_shape == "spike":
-            with open("spiky_profiles.txt", "a") as f:
-                f.write(f"{fits_name} {x1} {y1} {x2} {y2}\n")
-        elif profile_shape == "wide":
-            with open("wide_profiles.txt", "a") as f:
-                f.write(f"{fits_name} {x1} {y1} {x2} {y2}\n")
-
-
-
-    def evaluate_profile_shape(self, profile, fwhm_threshold_ratio=0.5):
+    def calculate_fwhm(self, profile, half_max_factor=0.95):
         """
-        Evaluate the profile shape with a more robust check:
-        - The profile should have a peak somewhere near the middle.
-        - The profile should descend away from that peak as we move toward the edges.
-        - If these conditions are not met, we return "flat".
+        Calculates the Full Width at Half Maximum (FWHM) of a normalized profile.
         
-        :param profile: 1D array of normalized brightness values.
-        :param fwhm_threshold_ratio: Threshold ratio of FWHM to the total length for "spike" vs "wide".
-        :return: "spike", "wide", or "flat"
+        Args:
+            profile (numpy.ndarray): The intensity profile of the trail.
+            half_max_factor (float): The fraction of the maximum intensity to define "half max."
+
+        Returns:
+            float: The calculated FWHM.
         """
-        total_length = len(profile)
+        profile = profile / np.max(profile)  # Normalize
+        half_max = np.max(profile) * half_max_factor
+        indices_above_half_max = np.where(profile >= half_max)[0]
+        if len(indices_above_half_max) > 0:
+            return indices_above_half_max[-1] - indices_above_half_max[0]
+        return 0
+    
+    def plot_profile_at_index(self, index, save_plot=False, profile_name="profile_at_index"):
+        """
+        Plot the brightness profile at the specified index.
+        :param index: Index of the profile to plot (1-based index).
+        :param save_plot: If True, save the plot to a file.
+        :param profile_name: Name for the saved plot file.
+        """
+        zero_based_index = index - 1  # Convert 1-based index to 0-based for internal use
+        if zero_based_index < 0 or zero_based_index >= len(self.brightness_profiles):
+            raise IndexError(f"Index {index} is out of range. Valid range: 1 to {len(self.brightness_profiles)}")
 
-        # Find the peak
-        peak_index = len(profile) // 2
-        peak_value = profile[peak_index]
+        profile = self.brightness_profiles[zero_based_index]
 
-        # Check if there's a meaningful peak
-        if peak_value <= 0:
-            # If peak <= 0, it's essentially non-informative
-            return "flat1"
-        
-        # Ensure the peak is not too close to the edges.
-        # A good heuristic: peak should lie within the central 50% of the profile
-        # Adjust these fractions as needed.
-        left_bound = int(total_length * 0.20)
-        right_bound = int(total_length * 0.80)
-        if peak_index < left_bound or peak_index > right_bound:
-            # Peak too close to edges, not a good trail shape
-            return "flat2"
+        plt.figure(figsize=(10, 6))
+        plt.plot(profile, label=f'Profile {index}', color='blue')
+        plt.axvline(len(profile) // 2, color='red', linestyle='--', label='Trail Center')
+        plt.xlabel('Position along perpendicular line')
+        plt.ylabel('Normalized Brightness')
+        plt.title(f'Brightness Profile at Index {index}')
+        plt.legend()
+        plt.grid()
 
-        # Check that the edges are significantly lower than the peak
-        # For instance, require that both ends (first and last 10% of the profile)
-        # are on average less than half the peak value.
-        
-        edge_fraction = int(total_length * 0.2)
-        left_edge_mean = np.mean(profile[:edge_fraction])
-        right_edge_mean = np.mean(profile[-edge_fraction:])
-        if left_edge_mean > peak_value / 1.01 or right_edge_mean > peak_value / 1.01:
-            # Edges are not substantially lower than the peak
-            return "flat3"
+        if save_plot:
+            output_file = os.path.join(self.output_dir, f"{profile_name}_index_{index}.png")
+            plt.savefig(output_file, dpi=300, bbox_inches='tight')
+            print(f"Saved profile plot for index {index} to {output_file}")
 
-        # Compute the half-maximum
-        half_max = peak_value / 2.0
-        
-        # Find left index for half_max
-        left_idx = peak_index
-        while left_idx > 0 and profile[left_idx] > half_max:
-            left_idx -= 1
-
-        # Find right index for half_max
-        right_idx = peak_index
-        while right_idx < total_length - 1 and profile[right_idx] > half_max:
-            right_idx += 1
-
-        # Compute FWHM
-        fwhm = right_idx - left_idx
-
-        # Decide if it's a spike or wide based on FWHM
-        if fwhm < total_length * fwhm_threshold_ratio:
-            return "spike"
-        else:
-            return "wide"
+        plt.show()

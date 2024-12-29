@@ -28,8 +28,8 @@ class TrailDetector:
             "rho": 1,
             "theta": np.pi / 180,
             "threshold": 250,
-            "minLineLength": 500,
-            "maxLineGap": 100,
+            "minLineLength": 300,
+            "maxLineGap": 150,
         }
         self.dbscan_eps = dbscan_eps
         self.dbscan_min_samples = dbscan_min_samples
