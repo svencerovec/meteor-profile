@@ -129,11 +129,8 @@ class TrailProfiler:
         plt.close()
         print(f"Saved divided image to {output_file}")
     
-    def get_combined_median_profile(self, brightness_profiles, profile_name, save_median_profile = False):
-        if not brightness_profiles:
-            raise ValueError("No brightness profiles provided for median calculation.")
-
-        profiles_array = np.vstack(brightness_profiles)
+    def get_combined_median_profile(self, brightness_profiles=None, profile_name="profile", save_median_profile=False):
+        profiles_array = np.vstack(brightness_profiles if brightness_profiles else self.brightness_profiles)
         median_profile = np.median(profiles_array, axis=0)
 
         if save_median_profile:
@@ -150,6 +147,21 @@ class TrailProfiler:
             print(f"Saved combined median profile plot to {output_file}")
 
         return median_profile
+    
+    def plot_median_profile(self):
+        if not self.brightness_profiles:
+            raise ValueError("No brightness profiles provided for median calculation.")
+
+        profiles_array = np.vstack(self.brightness_profiles)
+        median_profile = np.median(profiles_array, axis=0)
+
+        plt.figure(figsize=(12, 8))
+        plt.plot(median_profile, label='Combined Median Profile', color='blue')
+        plt.axvline(len(median_profile) // 2, color='red', linestyle='--', label='Intersection Point')
+        plt.xlabel('Position along perpendicular line')
+        plt.ylabel('Normalized Brightness (0-1)')
+        plt.title(f'Combined Median Profile')
+        plt.show()
 
     def calculate_auc(self, profile):
         """
@@ -161,10 +173,27 @@ class TrailProfiler:
         Returns:
             float: The calculated AUC.
         """
-        profile = profile / np.max(profile)  # Normalize
+        profile = profile / np.max(profile)
         return np.sum(profile)
+    
+    def calculate_auc_with_global_max(self, profile):
+        """
+        Calculates the Area Under the Curve (AUC) of a normalized profile,
+        but normalizes using the maximum value of the entire image instead of the profile.
 
-    def calculate_fwhm(self, profile, half_max_factor=0.95):
+        Args:
+            profile (numpy.ndarray): The intensity profile of the trail.
+
+        Returns:
+            float: The calculated AUC using the image's global maximum.
+        """
+        global_max = np.max(self.image_data)
+        if global_max == 0:
+            return 0
+        normalized_profile = profile / global_max
+        return np.sum(normalized_profile)
+
+    def calculate_fwhm(self, profile, half_max_factor=0.5):
         """
         Calculates the Full Width at Half Maximum (FWHM) of a normalized profile.
         
@@ -175,7 +204,7 @@ class TrailProfiler:
         Returns:
             float: The calculated FWHM.
         """
-        profile = profile / np.max(profile)  # Normalize
+        profile = profile / np.max(profile)
         half_max = np.max(profile) * half_max_factor
         indices_above_half_max = np.where(profile >= half_max)[0]
         if len(indices_above_half_max) > 0:
@@ -184,23 +213,50 @@ class TrailProfiler:
     
     def extend_line(self, x0, y0, x1, y1):
         """
-        Extend a line to the boundaries of the image.
+        Extend a line defined by (x0, y0) and (x1, y1) so that it touches the image boundaries.
+        The resulting endpoints are clamped to the valid pixel indices based on the image dimensions.
+        
         :param x0, y0: Start coordinates of the line.
         :param x1, y1: End coordinates of the line.
-        :return: Extended line coordinates (x0_ext, y0_ext, x1_ext, y1_ext).
+        :return: Extended line endpoints (x0_ext, y0_ext, x1_ext, y1_ext) clamped within image boundaries.
         """
         dx = x1 - x0
         dy = y1 - y0
         height, width = self.image_data.shape
-        t1 = -x0 / dx if dx != 0 else float('inf')
-        t2 = (width - x0) / dx if dx != 0 else float('inf')
-        t3 = -y0 / dy if dy != 0 else float('inf')
-        t4 = (height - y0) / dy if dy != 0 else float('inf')
-        t_min = max(min(t1, t2), min(t3, t4))
-        t_max = min(max(t1, t2), max(t3, t4))
-        x0_ext, y0_ext = x0 + t_min * dx, y0 + t_min * dy
-        x1_ext, y1_ext = x0 + t_max * dx, y0 + t_max * dy
+
+        # Compute the t values for each image boundary.
+        if dx != 0:
+            t_left = -x0 / dx
+            t_right = (width - 1 - x0) / dx
+        else:
+            t_left = -float('inf')
+            t_right = float('inf')
+
+        if dy != 0:
+            t_top = -y0 / dy
+            t_bottom = (height - 1 - y0) / dy
+        else:
+            t_top = -float('inf')
+            t_bottom = float('inf')
+
+        # Choose the t parameters that bring the line to the nearest boundaries.
+        t_min = max(min(t_left, t_right), min(t_top, t_bottom))
+        t_max = min(max(t_left, t_right), max(t_top, t_bottom))
+
+        # Compute extended endpoints.
+        x0_ext = x0 + t_min * dx
+        y0_ext = y0 + t_min * dy
+        x1_ext = x0 + t_max * dx
+        y1_ext = y0 + t_max * dy
+
+        # Clamp the endpoints so they don't exceed the image resolution.
+        x0_ext = max(0, min(x0_ext, width - 1))
+        x1_ext = max(0, min(x1_ext, width - 1))
+        y0_ext = max(0, min(y0_ext, height - 1))
+        y1_ext = max(0, min(y1_ext, height - 1))
+
         return x0_ext, y0_ext, x1_ext, y1_ext
+
     
     def remove_profile(self, index):
         """
