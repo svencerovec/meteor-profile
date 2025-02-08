@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.visualization import ImageNormalize, PercentileInterval, SqrtStretch
 
-# Import your classes
 from trail_detector_3 import TrailDetector
 from trail_profiler_2 import TrailProfiler
 
@@ -17,33 +16,28 @@ class TrailProfilerGUI:
         self.root.geometry("1100x700")
         
         self.fits_file = None
-        self.image_data = None         # Cache for the FITS image data
-        self.norm = None               # Cache for the normalized image
+        self.image_data = None
+        self.norm = None
         self.detector = TrailDetector()
         self.profiler = None
 
-        # Create a main frame to hold the control panel and canvas
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
-        # Create a top label for the title
         title_label = ttk.Label(self.main_frame, text="Trail Profiler Application", font=("Helvetica", 18, "bold"))
         title_label.pack(pady=10)
 
-        # Create a frame for controls (left) and for the image/plots (right)
         self.controls_frame = ttk.Frame(self.main_frame)
         self.controls_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
 
         self.canvas_frame = ttk.Frame(self.main_frame)
         self.canvas_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # File Controls
         file_controls = ttk.LabelFrame(self.controls_frame, text="File Controls", padding=(10, 5))
         file_controls.pack(fill=tk.X, pady=5)
         self.load_button = ttk.Button(file_controls, text="Load FITS File", command=self.load_file)
         self.load_button.pack(fill=tk.X, pady=2)
 
-        # Detection Controls (these remain enabled once an image is loaded)
         detection_controls = ttk.LabelFrame(self.controls_frame, text="Detection", padding=(10, 5))
         detection_controls.pack(fill=tk.X, pady=5)
         self.detect_button = ttk.Button(detection_controls, text="Detect Lines Automatically", command=self.detect_lines, state=tk.DISABLED)
@@ -51,7 +45,6 @@ class TrailProfilerGUI:
         self.manual_line_button = ttk.Button(detection_controls, text="Select Points Manually", command=self.manual_line, state=tk.DISABLED)
         self.manual_line_button.pack(fill=tk.X, pady=2)
 
-        # Profiling Controls
         profiling_controls = ttk.LabelFrame(self.controls_frame, text="Profiling", padding=(10, 5))
         profiling_controls.pack(fill=tk.X, pady=5)
         self.analyze_button = ttk.Button(profiling_controls, text="Reanalyze Perpendicular Lines", command=self.reanalyze_lines, state=tk.DISABLED)
@@ -61,7 +54,6 @@ class TrailProfilerGUI:
         self.plot_all_lines_button = ttk.Button(profiling_controls, text="Plot All Perpendicular Lines", command=self.plot_all_lines, state=tk.DISABLED)
         self.plot_all_lines_button.pack(fill=tk.X, pady=2)
         
-        # Additional Controls: Index entry, profile plotting, analysis, and new checkbuttons
         extra_controls = ttk.LabelFrame(self.controls_frame, text="Additional Controls", padding=(10, 5))
         extra_controls.pack(fill=tk.X, pady=5)
         self.index_entry = ttk.Entry(extra_controls)
@@ -75,8 +67,9 @@ class TrailProfilerGUI:
         self.plot_median_profile_button.pack(fill=tk.X, pady=2)
         self.analyze_profile_button = ttk.Button(extra_controls, text="Analyze Median Profile", command=self.analyze_profile, state=tk.DISABLED)
         self.analyze_profile_button.pack(fill=tk.X, pady=2)
+        self.plot_all_profiles_button = ttk.Button(extra_controls, text="Plot All Profiles", command=self.plot_all_profiles, state=tk.DISABLED)
+        self.plot_all_profiles_button.pack(fill=tk.X, pady=2)
         
-        # New checkbuttons to control what is overlaid on the main image.
         self.show_line_var = tk.BooleanVar(value=True)
         self.show_line_check = ttk.Checkbutton(extra_controls, text="Show line", variable=self.show_line_var, command=self.update_main_line_plot)
         self.show_line_check.pack(fill=tk.X, pady=2)
@@ -94,7 +87,7 @@ class TrailProfilerGUI:
         self.remove_profile_button.config(state=tk.DISABLED)
         self.plot_median_profile_button.config(state=tk.DISABLED)
         self.analyze_profile_button.config(state=tk.DISABLED)
-        # Optionally, uncheck the additional checkbuttons.
+        self.plot_all_profiles_button.config(state=tk.DISABLED)
         self.show_line_var.set(False)
         self.show_perp_var.set(False)
 
@@ -106,18 +99,13 @@ class TrailProfilerGUI:
         self.fits_file = filedialog.askopenfilename(filetypes=[("FITS files", "*.fits")])
         if self.fits_file:
             print(f"Loaded file: {self.fits_file}")
-            # Read and cache the image data and normalized image.
             with fits.open(self.fits_file) as hdul:
                 self.image_data = hdul[0].data
             self.norm = ImageNormalize(self.image_data, interval=PercentileInterval(1, 99), stretch=SqrtStretch())
-            # Reset any existing profile information.
             self.profiler = None
-            # Enable only the detection controls.
             self.detect_button.config(state=tk.NORMAL)
             self.manual_line_button.config(state=tk.NORMAL)
-            # Disable all profiling and additional controls.
             self.disable_profiling_controls()
-            # Display the FITS image.
             self.display_fits_image()
 
     def display_fits_image(self):
@@ -150,13 +138,11 @@ class TrailProfilerGUI:
         ax = fig.add_subplot(111)
         ax.imshow(self.image_data, cmap="gray", origin="lower", norm=self.norm)
         
-        # Overlay the selected line if "Show line" is checked.
         if self.profiler and self.show_line_var.get():
             x1, y1 = self.profiler.point1
             x2, y2 = self.profiler.point2
             ax.plot([x1, x2], [y1, y2], color="red", linestyle="-", linewidth=3, label="Selected Line")
         
-        # Overlay perpendicular lines if available and "Show perpendicular lines" is checked.
         if self.profiler and self.show_perp_var.get() and self.profiler.line_coordinates:
             for coords in self.profiler.line_coordinates:
                 start, end = coords
@@ -205,11 +191,8 @@ class TrailProfilerGUI:
                 view_popup.title("Detailed Line View")
                 fig = plt.Figure(figsize=(6, 6))
                 ax = fig.add_subplot(111)
-                # Display the cached image
                 ax.imshow(self.image_data, cmap="gray", origin="lower", norm=self.norm)
-                # Check if "Extend line" is checked.
                 if extend_flag.get():
-                    # Use an existing profiler if available, otherwise create a temporary one
                     if self.profiler:
                         extended_line = self.profiler.extend_line(
                             selected_line[0], selected_line[1],
@@ -225,14 +208,12 @@ class TrailProfilerGUI:
                             selected_line[0], selected_line[1],
                             selected_line[2], selected_line[3]
                         )
-                    # Plot the extended line.
                     ax.plot(
                         [extended_line[0], extended_line[2]],
                         [extended_line[1], extended_line[3]],
                         color="red", linestyle="-", linewidth=3, label="Extended Line"
                     )
                 else:
-                    # Plot the original (non-extended) line.
                     ax.plot(
                         [selected_line[0], selected_line[2]],
                         [selected_line[1], selected_line[3]],
@@ -247,7 +228,6 @@ class TrailProfilerGUI:
                 canvas = FigureCanvasTkAgg(fig, master=border_frame)
                 canvas.draw()
                 canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
             view_button = ttk.Button(frame, text="View Plot", command=view_plot)
             view_button.pack(pady=2)
             def use_line(selected_line=line, extend_flag=extend_var):
@@ -274,7 +254,6 @@ class TrailProfilerGUI:
                     point1=(chosen_line[0], chosen_line[1]),
                     point2=(chosen_line[2], chosen_line[3])
                 )
-                # Enable profiling-related buttons.
                 self.analyze_button.config(state=tk.NORMAL)
                 self.plot_main_line_button.config(state=tk.NORMAL)
                 self.plot_all_lines_button.config(state=tk.NORMAL)
@@ -282,7 +261,7 @@ class TrailProfilerGUI:
                 self.remove_profile_button.config(state=tk.NORMAL)
                 self.plot_median_profile_button.config(state=tk.NORMAL)
                 self.analyze_profile_button.config(state=tk.NORMAL)
-                # Update the main canvas to show the chosen line and overlays.
+                self.plot_all_profiles_button.config(state=tk.NORMAL)
                 self.update_main_line_plot()
                 popup.destroy()
             use_button = ttk.Button(frame, text="Use this line for profiling", command=use_line)
@@ -317,7 +296,7 @@ class TrailProfilerGUI:
         self.remove_profile_button.config(state=tk.NORMAL)
         self.plot_median_profile_button.config(state=tk.NORMAL)
         self.analyze_profile_button.config(state=tk.NORMAL)
-        # Update the main canvas to show the manually chosen line.
+        self.plot_all_profiles_button.config(state=tk.NORMAL)
         self.update_main_line_plot()
 
     def reanalyze_lines(self):
@@ -357,7 +336,6 @@ class TrailProfilerGUI:
                 index = int(self.index_entry.get())
                 self.profiler.remove_profile(index)
                 print(f"Removed profile at index {index}.")
-                # Update the main canvas after removal.
                 self.update_main_line_plot()
             except ValueError:
                 messagebox.showerror("Invalid Input", "Please enter a valid number.")
@@ -379,7 +357,8 @@ class TrailProfilerGUI:
         if not self.profiler or not self.profiler.brightness_profiles:
             messagebox.showerror("Error", "No brightness profiles available for analysis.")
             return
-        median_profile = self.profiler.get_combined_median_profile()
+        median_profile = self.profiler.get_combined_median_profile() if hasattr(self.profiler, "get_combined_median_profile") \
+                         else np.median(np.vstack(self.profiler.brightness_profiles), axis=0)
         auc_local = self.profiler.calculate_auc(median_profile)
         auc_global = self.profiler.calculate_auc_with_global_max(median_profile)
         fwhm_05 = self.profiler.calculate_fwhm(median_profile, half_max_factor=0.5)
@@ -392,7 +371,37 @@ class TrailProfilerGUI:
         )
         messagebox.showinfo("Profile Analysis", message)
 
+    def plot_all_profiles(self):
+        """
+        Plot all perpendicular brightness profiles in one plot.
+        Each profile is plotted with a unique label.
+        """
+        if not self.profiler or not self.profiler.brightness_profiles:
+            messagebox.showerror("Error", "No brightness profiles available for plotting.")
+            return
+
+        fig = plt.Figure(figsize=(8, 6))
+        ax = fig.add_subplot(111)
+        for i, profile in enumerate(self.profiler.brightness_profiles):
+            ax.plot(profile, label=f'Profile {i+1}')
+        if len(self.profiler.brightness_profiles[0]) > 0:
+            center = len(self.profiler.brightness_profiles[0]) // 2
+            ax.axvline(center, color='red', linestyle='--', label='Trail Center')
+        ax.set_title("All Perpendicular Brightness Profiles")
+        ax.set_xlabel("Position along perpendicular line")
+        ax.set_ylabel("Normalized Brightness")
+        ax.legend()
+
+        plot_window = tk.Toplevel(self.root)
+        plot_window.title("All Perpendicular Profiles")
+        border_frame = ttk.Frame(plot_window, borderwidth=2, relief="solid")
+        border_frame.pack(fill=tk.BOTH, expand=True)
+        canvas = FigureCanvasTkAgg(fig, master=border_frame)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
 if __name__ == "__main__":
+    import numpy as np
     root = tk.Tk()
     app = TrailProfilerGUI(root)
     root.mainloop()
