@@ -5,187 +5,292 @@ from astropy.visualization import ImageNormalize, PercentileInterval, SqrtStretc
 from scipy.ndimage import map_coordinates
 
 class TrailProfiler:
+    """
+    The TrailProfiler class measures brightness distributions along lines
+    perpendicular to a user-defined trail in an astronomical FITS image.
+    It also provides utility methods to visualize and analyze these profiles.
+    """
+
     def __init__(self, fits_file, point1, point2, output_dir="trail_profiles"):
         """
-        Initialize the TrailProfiler with a FITS file and trail points.
-        :param fits_file: Path to the FITS file.
-        :param point1: First point of the trail (x0, y0).
-        :param point2: Second point of the trail (x1, y1).
-        :param output_dir: Directory to save trail profiles.
+        Initializes the profiler with a path to a FITS file and two points
+        (x0, y0) and (x1, y1) defining the main trail.
+
+        Args:
+            fits_file (str): Path to the FITS file containing the image data.
+            point1 (tuple): Coordinates of the first trail endpoint (x0, y0).
+            point2 (tuple): Coordinates of the second trail endpoint (x1, y1).
+            output_dir (str): Directory where plots and data will be saved.
         """
         self.fits_file = fits_file
         self.point1 = point1
         self.point2 = point2
         self.output_dir = output_dir
+
         self.image_data = None
         self.normalized_data = None
         self.brightness_profiles = []
         self.line_coordinates = []
-        self._load_image_data()
-        self._ensure_output_directory()
-        self._analyze_perpendicular_lines()
 
-    def _load_image_data(self):
+        self._load_fits_data()
+        self._create_output_dir()
+        self._sample_perpendicular_profiles()
+
+    def _load_fits_data(self):
         """
-        Load and normalize the FITS image data.
+        Loads the FITS image data from disk and applies a brightness normalization.
         """
         from astropy.io import fits
+
         with fits.open(self.fits_file) as hdul:
             self.image_data = hdul[0].data
 
-        norm = ImageNormalize(self.image_data, interval=PercentileInterval(99.5), stretch=SqrtStretch())
+        norm = ImageNormalize(
+            self.image_data,
+            interval=PercentileInterval(99.5),
+            stretch=SqrtStretch()
+        )
         self.normalized_data = norm(self.image_data)
 
-    def _ensure_output_directory(self):
+    def _create_output_dir(self):
         """
-        Ensure that the output directory exists.
+        Ensures that the directory for output files exists.
         """
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-    def _analyze_perpendicular_lines(self, num_perpendicular_lines=10, short_window_size=100, step_size=0.1):
+    def _sample_perpendicular_profiles(
+        self,
+        num_perp_lines=10,
+        half_line_length=100,
+        sampling_step=0.1
+    ):
         """
-        Analyze perpendicular brightness profiles along the defined trail line.
-        Saves results to public variables.
+        Draws multiple perpendicular lines along the main trail, then samples
+        brightness values at regularly spaced points on each line. If any line
+        would go outside the image boundaries, it is skipped entirely.
+
+        Args:
+            num_perp_lines (int): Number of perpendicular slices to take along the trail.
+            half_line_length (float): Half the length of each perpendicular line in pixels.
+            sampling_step (float): Step size (in pixels) used for sampling brightness.
         """
         x0, y0 = self.point1
         x1, y1 = self.point2
-        main_line_length = np.hypot(x1 - x0, y1 - y0)
+        main_length = np.hypot(x1 - x0, y1 - y0)
 
-        # Perpendicular direction vector (unit vector)
-        perp_dx = -(y1 - y0) / main_line_length
-        perp_dy = (x1 - x0) / main_line_length
-        step_along_main_line = main_line_length / (num_perpendicular_lines - 1)
+        # Unit vector perpendicular to the trail
+        perp_dx = -(y1 - y0) / main_length
+        perp_dy = (x1 - x0) / main_length
 
-        self.brightness_profiles = []
-        self.line_coordinates = []
+        # Distance between each perpendicular slice along the trail
+        slice_spacing = main_length / (num_perp_lines - 1) if num_perp_lines > 1 else main_length
 
-        for i in range(num_perpendicular_lines):
-            t = i * step_along_main_line / main_line_length
+        height, width = self.image_data.shape
+        self.brightness_profiles.clear()
+        self.line_coordinates.clear()
+
+        for i in range(num_perp_lines):
+            # Parameter t determines how far along the main trail we sample
+            t = i * slice_spacing / main_length
             x_center = x0 + t * (x1 - x0)
             y_center = y0 + t * (y1 - y0)
 
-            # Define perpendicular line
-            x_perp_start = x_center - short_window_size * perp_dx
-            y_perp_start = y_center - short_window_size * perp_dy
-            x_perp_end = x_center + short_window_size * perp_dx
-            y_perp_end = y_center + short_window_size * perp_dy
+            # Determine start and end points of the perpendicular line
+            x_start = x_center - half_line_length * perp_dx
+            y_start = y_center - half_line_length * perp_dy
+            x_end = x_center + half_line_length * perp_dx
+            y_end = y_center + half_line_length * perp_dy
 
-            # Sample brightness along the perpendicular line
-            num_samples = int(2 * short_window_size / step_size)
-            x_perpendicular_full = np.linspace(x_perp_start, x_perp_end, num_samples)
-            y_perpendicular_full = np.linspace(y_perp_start, y_perp_end, num_samples)
-            perpendicular_coords = np.vstack((y_perpendicular_full, x_perpendicular_full))
-            brightness = map_coordinates(self.image_data, perpendicular_coords, order=3)
+            # Check if the entire line is within the image boundaries
+            # If *any* endpoint is out of bounds, skip the line
+            if not (0 <= x_start <= (width - 1) and
+                    0 <= x_end <= (width - 1) and
+                    0 <= y_start <= (height - 1) and
+                    0 <= y_end <= (height - 1)):
+                continue
 
-            # Normalize brightness
-            normalized_brightness = (brightness - np.min(self.image_data)) / (
-                np.max(self.image_data) - np.min(self.image_data)
-            )
-            self.brightness_profiles.append(normalized_brightness)
-            self.line_coordinates.append(((x_perp_start, y_perp_start), (x_perp_end, y_perp_end)))
+            # Create arrays of x and y coordinates along this perpendicular line
+            num_samples = int(2 * half_line_length / sampling_step)
+            x_coords = np.linspace(x_start, x_end, num_samples)
+            y_coords = np.linspace(y_start, y_end, num_samples)
+            coords_for_sampling = np.vstack((y_coords, x_coords))
 
-    def plot_brightness_profiles(self, save_plot=False, profile_name="brightness_profiles"):
+            # Interpolate brightness at each coordinate
+            brightness_vals = map_coordinates(self.image_data, coords_for_sampling, order=3)
+
+            # Normalize brightness on a 0-1 scale
+            data_min = np.min(self.image_data)
+            data_max = np.max(self.image_data)
+            if data_max == data_min:
+                # Avoid division by zero if the image is uniform
+                norm_vals = np.zeros_like(brightness_vals)
+            else:
+                norm_vals = (brightness_vals - data_min) / (data_max - data_min)
+
+            self.brightness_profiles.append(norm_vals)
+            self.line_coordinates.append(((x_start, y_start), (x_end, y_end)))
+
+    def plot_perpendicular_profiles(self, save_plot=False, filename="perp_profiles"):
         """
-        Plot brightness profiles with unique colors for each line.
-        :param save_plot: If True, save the plot to a file.
-        :param profile_name: Name for the saved plot file.
+        Plots all sampled brightness profiles in a single figure.
+
+        Args:
+            save_plot (bool): If True, saves the plot to disk.
+            filename (str): Filename (without extension) for the saved plot.
         """
         plt.figure(figsize=(12, 8))
         for i, profile in enumerate(self.brightness_profiles):
-            plt.plot(profile, label=f'Profile {i + 1}')
-        plt.axvline(len(self.brightness_profiles[0]) // 2, color='red', linestyle='--', label='Trail Center')
-        plt.xlabel('Position along perpendicular line')
-        plt.ylabel('Normalized Brightness')
-        plt.title('Brightness Profiles')
+            plt.plot(profile, label=f"Profile {i+1}")
+
+        # Mark the approximate trail center if at least one profile exists
+        if self.brightness_profiles:
+            center_index = len(self.brightness_profiles[0]) // 2
+            plt.axvline(center_index, color='red', linestyle='--', label='Trail Center')
+
+        plt.xlabel("Sample Index Along Perpendicular")
+        plt.ylabel("Normalized Brightness")
+        plt.title("Perpendicular Brightness Profiles")
         plt.legend()
         plt.grid()
 
         if save_plot:
-            output_file = os.path.join(self.output_dir, f"{profile_name}.png")
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            print(f"Saved brightness profiles to {output_file}")
+            outpath = os.path.join(self.output_dir, f"{filename}.png")
+            plt.savefig(outpath, dpi=300, bbox_inches="tight")
+            print(f"Perpendicular profiles plot saved to {outpath}")
 
         plt.show()
 
-    
-    def plot_divided_image(self, line_coordinates, profile_name):
+    def plot_main_line(self, save_plot=False, filename="main_line"):
         """
-        Plot and save the image with overlaid perpendicular lines, with enhanced brightness.
-        :param line_coordinates: Coordinates of the perpendicular lines.
-        :param profile_name: Name for the saved divided image file.
+        Displays the original image with the main trail (point1-point2) overlaid.
+
+        Args:
+            save_plot (bool): If True, saves the plot to disk.
+            filename (str): Filename (without extension) for the saved plot.
         """
-        output_file = os.path.join(self.divided_dir, f"{profile_name}.png")
+        x0, y0 = self.point1
+        x1, y1 = self.point2
+
         plt.figure(figsize=(10, 10))
-        plt.imshow(self.normalized_data, cmap='gray', origin='lower')
-        for (start, end) in line_coordinates:
-            x_values = [start[0], end[0]]
-            y_values = [start[1], end[1]]
-            plt.plot(x_values, y_values, color='cyan', linestyle='--', linewidth=1)
-        plt.title(f"Perpendicular Lines for: {profile_name}")
-        plt.xlabel("X pixel")
-        plt.ylabel("Y pixel")
-        plt.savefig(output_file, dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"Saved divided image to {output_file}")
-    
-    def get_combined_median_profile(self, brightness_profiles=None, profile_name="profile", save_median_profile=False):
-        profiles_array = np.vstack(brightness_profiles if brightness_profiles else self.brightness_profiles)
-        median_profile = np.median(profiles_array, axis=0)
+        plt.imshow(self.normalized_data, cmap="gray", origin="lower")
+        plt.plot([x0, x1], [y0, y1], color="red", linestyle="-", linewidth=2, label="Main Trail")
+        plt.title("Main Trail on Image")
+        plt.xlabel("X Pixel")
+        plt.ylabel("Y Pixel")
+        plt.legend()
 
-        if save_median_profile:
-            output_file = os.path.join(self.output_dir, f"{profile_name}_median.png")
-            plt.figure(figsize=(12, 8))
-            plt.plot(median_profile, label='Combined Median Profile', color='blue')
-            plt.axvline(len(median_profile) // 2, color='red', linestyle='--', label='Intersection Point')
-            plt.xlabel('Position along perpendicular line')
-            plt.ylabel('Normalized Brightness (0-1)')
-            plt.title(f'Combined Median Profile: {profile_name}')
-            plt.legend()
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            plt.close()
-            print(f"Saved combined median profile plot to {output_file}")
+        if save_plot:
+            outpath = os.path.join(self.output_dir, f"{filename}.png")
+            plt.savefig(outpath, dpi=300, bbox_inches="tight")
+            print(f"Main line plot saved to {outpath}")
 
-        return median_profile
-    
-    def plot_median_profile(self):
-        if not self.brightness_profiles:
-            raise ValueError("No brightness profiles provided for median calculation.")
+        plt.show()
 
-        profiles_array = np.vstack(self.brightness_profiles)
-        median_profile = np.median(profiles_array, axis=0)
+    def plot_all_perp_lines(self, save_plot=False, filename="all_perp_lines"):
+        """
+        Displays the original image with all perpendicular lines overlaid.
+
+        Args:
+            save_plot (bool): If True, saves the plot to disk.
+            filename (str): Filename (without extension) for the saved plot.
+        """
+        if not self.line_coordinates:
+            raise ValueError("No perpendicular lines to plot. Run _sample_perpendicular_profiles first.")
+
+        plt.figure(figsize=(10, 10))
+        plt.imshow(self.normalized_data, cmap="gray", origin="lower")
+
+        for i, (start, end) in enumerate(self.line_coordinates):
+            xs = [start[0], end[0]]
+            ys = [start[1], end[1]]
+            plt.plot(xs, ys, linestyle="--", linewidth=1, label=f"Line {i+1}")
+
+        plt.title("All Perpendicular Lines on Image")
+        plt.xlabel("X Pixel")
+        plt.ylabel("Y Pixel")
+        plt.legend(loc="upper right", fontsize="small")
+
+        if save_plot:
+            outpath = os.path.join(self.output_dir, f"{filename}.png")
+            plt.savefig(outpath, dpi=300, bbox_inches="tight")
+            print(f"All perpendicular lines plot saved to {outpath}")
+
+        plt.show()
+
+    def calculate_median_profile(self, profiles=None):
+        """
+        Calculates the median brightness profile across multiple samples.
+
+        Args:
+            profiles (list or None): Optional list of arrays containing brightness profiles.
+                                     Defaults to self.brightness_profiles if None.
+
+        Returns:
+            numpy.ndarray: Array of median brightness values.
+        """
+        chosen_profiles = profiles if profiles is not None else self.brightness_profiles
+        if not chosen_profiles:
+            raise ValueError("No brightness profiles available for median calculation.")
+        stacked = np.vstack(chosen_profiles)
+        median_vals = np.median(stacked, axis=0)
+        return median_vals
+
+    def plot_median_profile(self, profiles=None, save_plot=False, filename="median_profile"):
+        """
+        Displays and optionally saves the median brightness profile.
+
+        Args:
+            profiles (list or None): Optional list of arrays containing brightness profiles.
+                                     Defaults to self.brightness_profiles if None.
+            save_plot (bool): If True, saves the plot to disk.
+            filename (str): Filename (without extension) for the saved plot.
+        """
+        median_vals = self.calculate_median_profile(profiles=profiles)
 
         plt.figure(figsize=(12, 8))
-        plt.plot(median_profile, label='Combined Median Profile', color='blue')
-        plt.axvline(len(median_profile) // 2, color='red', linestyle='--', label='Intersection Point')
-        plt.xlabel('Position along perpendicular line')
-        plt.ylabel('Normalized Brightness (0-1)')
-        plt.title(f'Combined Median Profile')
+        plt.plot(median_vals, label="Median Brightness Profile", color="blue")
+        center_idx = len(median_vals) // 2
+        plt.axvline(center_idx, color="red", linestyle="--", label="Approx. Trail Center")
+        plt.xlabel("Sample Index")
+        plt.ylabel("Normalized Brightness")
+        plt.title("Combined Median Profile")
+        plt.legend()
+        plt.grid()
+
+        if save_plot:
+            outpath = os.path.join(self.output_dir, f"{filename}.png")
+            plt.savefig(outpath, dpi=300, bbox_inches="tight")
+            print(f"Median profile plot saved to {outpath}")
+
         plt.show()
 
     def calculate_auc(self, profile):
         """
-        Calculates the Area Under the Curve (AUC) of a normalized profile.
-        
-        Args:
-            profile (numpy.ndarray): The intensity profile of the trail.
-
-        Returns:
-            float: The calculated AUC.
-        """
-        profile = profile / np.max(profile)
-        return np.sum(profile)
-    
-    def calculate_auc_with_global_max(self, profile):
-        """
-        Calculates the Area Under the Curve (AUC) of a normalized profile,
-        but normalizes using the maximum value of the entire image instead of the profile.
+        Computes the area under a curve (AUC) for a normalized profile,
+        using the profile's own maximum for normalization.
 
         Args:
-            profile (numpy.ndarray): The intensity profile of the trail.
+            profile (numpy.ndarray): Brightness profile of the trail.
 
         Returns:
-            float: The calculated AUC using the image's global maximum.
+            float: Calculated AUC.
+        """
+        if np.max(profile) == 0:
+            return 0
+        normalized_profile = profile / np.max(profile)
+        return np.sum(normalized_profile)
+
+    def calculate_auc_global_max(self, profile):
+        """
+        Computes the area under a curve (AUC) for a brightness profile,
+        normalizing by the image's global maximum rather than the profile's.
+
+        Args:
+            profile (numpy.ndarray): Brightness profile of the trail.
+
+        Returns:
+            float: Calculated AUC.
         """
         global_max = np.max(self.image_data)
         if global_max == 0:
@@ -195,198 +300,153 @@ class TrailProfiler:
 
     def calculate_fwhm(self, profile, half_max_factor=0.5):
         """
-        Calculates the Full Width at Half Maximum (FWHM) of a normalized profile.
-        
+        Determines the Full Width at Half Maximum (FWHM) of a profile.
+
         Args:
-            profile (numpy.ndarray): The intensity profile of the trail.
-            half_max_factor (float): The fraction of the maximum intensity to define "half max."
+            profile (numpy.ndarray): Brightness profile of the trail.
+            half_max_factor (float): Fraction of the max intensity defining "half max."
 
         Returns:
-            float: The calculated FWHM.
+            float: The FWHM in index units.
         """
-        profile = profile / np.max(profile)
-        half_max = np.max(profile) * half_max_factor
-        indices_above_half_max = np.where(profile >= half_max)[0]
-        if len(indices_above_half_max) > 0:
-            return indices_above_half_max[-1] - indices_above_half_max[0]
-        return 0
-    
-    def extend_line(self, x0, y0, x1, y1):
+        peak = np.max(profile)
+        if peak == 0:
+            return 0
+        half_max = peak * half_max_factor
+        above = np.where(profile >= half_max)[0]
+        if len(above) < 2:
+            return 0
+        return above[-1] - above[0]
+
+    def extend_line_to_image_edges(self, x0, y0, x1, y1):
         """
-        Extend a line defined by (x0, y0) and (x1, y1) so that it touches the image boundaries.
-        The resulting endpoints are clamped to the valid pixel indices based on the image dimensions.
-        
-        :param x0, y0: Start coordinates of the line.
-        :param x1, y1: End coordinates of the line.
-        :return: Extended line endpoints (x0_ext, y0_ext, x1_ext, y1_ext) clamped within image boundaries.
+        Extends a line segment so that it intersects the image boundaries,
+        ensuring the endpoints remain within valid pixel coordinates.
+
+        Args:
+            x0, y0 (float): Start of the line.
+            x1, y1 (float): End of the line.
+
+        Returns:
+            tuple: (x0_extended, y0_extended, x1_extended, y1_extended)
         """
-        dx = x1 - x0
-        dy = y1 - y0
+        dx, dy = x1 - x0, y1 - y0
         height, width = self.image_data.shape
 
-        # Compute the t values for each image boundary.
+        # Calculate intersection parameters for each edge
         if dx != 0:
             t_left = -x0 / dx
             t_right = (width - 1 - x0) / dx
         else:
-            t_left = -float('inf')
-            t_right = float('inf')
+            t_left = -np.inf
+            t_right = np.inf
 
         if dy != 0:
             t_top = -y0 / dy
             t_bottom = (height - 1 - y0) / dy
         else:
-            t_top = -float('inf')
-            t_bottom = float('inf')
+            t_top = -np.inf
+            t_bottom = np.inf
 
-        # Choose the t parameters that bring the line to the nearest boundaries.
+        # Determine how far to extend to reach the nearest edges
         t_min = max(min(t_left, t_right), min(t_top, t_bottom))
         t_max = min(max(t_left, t_right), max(t_top, t_bottom))
 
-        # Compute extended endpoints.
+        # Compute extended coordinates
         x0_ext = x0 + t_min * dx
         y0_ext = y0 + t_min * dy
         x1_ext = x0 + t_max * dx
         y1_ext = y0 + t_max * dy
 
-        # Clamp the endpoints so they don't exceed the image resolution.
-        x0_ext = max(0, min(x0_ext, width - 1))
-        x1_ext = max(0, min(x1_ext, width - 1))
-        y0_ext = max(0, min(y0_ext, height - 1))
-        y1_ext = max(0, min(y1_ext, height - 1))
+        # Clamp to image dimensions
+        x0_ext = np.clip(x0_ext, 0, width - 1)
+        x1_ext = np.clip(x1_ext, 0, width - 1)
+        y0_ext = np.clip(y0_ext, 0, height - 1)
+        y1_ext = np.clip(y1_ext, 0, height - 1)
 
         return x0_ext, y0_ext, x1_ext, y1_ext
 
-    
-    def remove_profile(self, index):
+    def remove_profile_by_index(self, index):
         """
-        Remove the brightness profile and its corresponding line coordinates at the specified index.
-        :param index: Index of the profile to remove (1-based index).
-        """
-        zero_based_index = index - 1  # Convert 1-based index to 0-based for internal use
-        if zero_based_index < 0 or zero_based_index >= len(self.brightness_profiles):
-            raise IndexError(f"Index {index} is out of range. Valid range: 1 to {len(self.brightness_profiles)}")
+        Removes one brightness profile and its associated line coordinates.
 
-        # Remove the brightness profile and line coordinates
-        del self.brightness_profiles[zero_based_index]
-        del self.line_coordinates[zero_based_index]
-        print(f"Removed profile and coordinates at index {index}.")
-    
-    def plot_profile_at_index(self, index, save_plot=False, profile_name="profile_at_index"):
+        Args:
+            index (int): 1-based index of the profile to remove.
         """
-        Plot the brightness profile at the specified index.
-        :param index: Index of the profile to plot (1-based index).
-        :param save_plot: If True, save the plot to a file.
-        :param profile_name: Name for the saved plot file.
-        """
-        zero_based_index = index - 1  # Convert 1-based index to 0-based for internal use
-        if zero_based_index < 0 or zero_based_index >= len(self.brightness_profiles):
-            raise IndexError(f"Index {index} is out of range. Valid range: 1 to {len(self.brightness_profiles)}")
+        idx = index - 1
+        if idx < 0 or idx >= len(self.brightness_profiles):
+            raise IndexError(
+                f"Index {index} out of range. Valid: 1 to {len(self.brightness_profiles)}"
+            )
+        del self.brightness_profiles[idx]
+        del self.line_coordinates[idx]
+        print(f"Removed brightness profile and line at index {index}.")
 
-        profile = self.brightness_profiles[zero_based_index]
+    def plot_profile_by_index(self, index, save_plot=False, filename="profile_by_index"):
+        """
+        Plots a single brightness profile from the stored list by index.
+
+        Args:
+            index (int): 1-based index of the profile to plot.
+            save_plot (bool): If True, saves the plot to disk.
+            filename (str): Filename (without extension) for the saved plot.
+        """
+        idx = index - 1
+        if idx < 0 or idx >= len(self.brightness_profiles):
+            raise IndexError(
+                f"Index {index} out of range. Valid: 1 to {len(self.brightness_profiles)}"
+            )
+
+        profile = self.brightness_profiles[idx]
 
         plt.figure(figsize=(10, 6))
-        plt.plot(profile, label=f'Profile {index}', color='blue')
-        plt.axvline(len(profile) // 2, color='red', linestyle='--', label='Trail Center')
-        plt.xlabel('Position along perpendicular line')
-        plt.ylabel('Normalized Brightness')
-        plt.title(f'Brightness Profile at Index {index}')
+        plt.plot(profile, label=f"Profile {index}", color="blue")
+        plt.axvline(len(profile) // 2, color="red", linestyle="--", label="Approx. Trail Center")
+        plt.xlabel("Sample Index Along Perpendicular")
+        plt.ylabel("Normalized Brightness")
+        plt.title(f"Brightness Profile {index}")
         plt.legend()
         plt.grid()
 
         if save_plot:
-            output_file = os.path.join(self.output_dir, f"{profile_name}_index_{index}.png")
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            print(f"Saved profile plot for index {index} to {output_file}")
+            outpath = os.path.join(self.output_dir, f"{filename}_index_{index}.png")
+            plt.savefig(outpath, dpi=300, bbox_inches="tight")
+            print(f"Profile {index} plot saved to {outpath}")
 
         plt.show()
 
-    def plot_line_on_image(self, index, save_plot=False, profile_name="line_on_image"):
+    def plot_line_by_index(self, index, save_plot=False, filename="line_by_index"):
         """
-        Plot the line corresponding to a brightness profile on the FITS image.
-        :param index: Index of the line to plot (1-based index).
-        :param save_plot: If True, save the plot to a file.
-        :param profile_name: Name for the saved plot file.
+        Overlays a single perpendicular line on the normalized image.
+
+        Args:
+            index (int): 1-based index of the line to plot.
+            save_plot (bool): If True, saves the plot to disk.
+            filename (str): Filename (without extension) for the saved plot.
         """
-        zero_based_index = index - 1  # Convert 1-based index to 0-based for internal use
-        if zero_based_index < 0 or zero_based_index >= len(self.line_coordinates):
-            raise IndexError(f"Index {index} is out of range. Valid range: 1 to {len(self.line_coordinates)}")
-
-        start, end = self.line_coordinates[zero_based_index]
-
-        plt.figure(figsize=(10, 10))
-        plt.imshow(self.normalized_data, cmap='gray', origin='lower')
-        plt.plot(
-            [start[0], end[0]], 
-            [start[1], end[1]], 
-            color='cyan', linestyle='-', linewidth=2, label=f'Line {index}'
-        )
-        plt.title(f"Line on Image for Profile {index}")
-        plt.xlabel("X pixel")
-        plt.ylabel("Y pixel")
-        plt.legend()
-
-        if save_plot:
-            output_file = os.path.join(self.output_dir, f"{profile_name}_index_{index}.png")
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            print(f"Saved line plot for index {index} to {output_file}")
-
-        plt.show()
-    
-    def plot_main_line(self, save_plot=False, profile_name="main_line_on_image"):
-        """
-        Plot the main line being analyzed on the FITS image.
-        :param save_plot: If True, save the plot to a file.
-        :param profile_name: Name for the saved plot file.
-        """
-        x0, y0 = self.point1
-        x1, y1 = self.point2
-
-        plt.figure(figsize=(10, 10))
-        plt.imshow(self.normalized_data, cmap='gray', origin='lower')
-        plt.plot(
-            [x0, x1], 
-            [y0, y1], 
-            color='red', linestyle='-', linewidth=2, label='Main Line'
-        )
-        plt.title("Main Line on Image")
-        plt.xlabel("X pixel")
-        plt.ylabel("Y pixel")
-        plt.legend()
-
-        if save_plot:
-            output_file = os.path.join(self.output_dir, f"{profile_name}.png")
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            print(f"Saved main line plot to {output_file}")
-
-        plt.show()
-    
-    def plot_all_perpendicular_lines(self, save_plot=False, profile_name="all_perpendicular_lines"):
-        """
-        Plot all perpendicular lines being analyzed on the FITS image.
-        :param save_plot: If True, save the plot to a file.
-        :param profile_name: Name for the saved plot file.
-        """
-        if not self.line_coordinates:
-            raise ValueError("No perpendicular lines to plot. Run analyze_perpendicular_lines first.")
-
-        plt.figure(figsize=(10, 10))
-        plt.imshow(self.normalized_data, cmap='gray', origin='lower')
-
-        for i, (start, end) in enumerate(self.line_coordinates):
-            plt.plot(
-                [start[0], end[0]], 
-                [start[1], end[1]], 
-                linestyle='--', linewidth=1, label=f'Perpendicular Line {i + 1}'
+        idx = index - 1
+        if idx < 0 or idx >= len(self.line_coordinates):
+            raise IndexError(
+                f"Index {index} out of range. Valid: 1 to {len(self.line_coordinates)}"
             )
-        plt.title("All Perpendicular Lines on Image")
-        plt.xlabel("X pixel")
-        plt.ylabel("Y pixel")
-        plt.legend(loc='upper right', fontsize='small')
+
+        start, end = self.line_coordinates[idx]
+
+        plt.figure(figsize=(10, 10))
+        plt.imshow(self.normalized_data, cmap="gray", origin="lower")
+        plt.plot(
+            [start[0], end[0]],
+            [start[1], end[1]],
+            color="cyan", linestyle="-", linewidth=2, label=f"Line {index}"
+        )
+        plt.title(f"Perpendicular Line for Profile {index}")
+        plt.xlabel("X Pixel")
+        plt.ylabel("Y Pixel")
+        plt.legend()
 
         if save_plot:
-            output_file = os.path.join(self.output_dir, f"{profile_name}.png")
-            plt.savefig(output_file, dpi=300, bbox_inches='tight')
-            print(f"Saved all perpendicular lines plot to {output_file}")
+            outpath = os.path.join(self.output_dir, f"{filename}_index_{index}.png")
+            plt.savefig(outpath, dpi=300, bbox_inches="tight")
+            print(f"Line {index} plot saved to {outpath}")
 
         plt.show()

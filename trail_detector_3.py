@@ -113,7 +113,7 @@ class TrailDetector:
 
     # Handles dim-mode preprocessing, including thresholding faint signals and applying morphological operations
     def _preprocess_dim(self, image_data):
-        image_data = np.nan_to_num(image_data, nan=0.0, posinf=0.0, neginf=0.0)
+        #image_data = np.nan_to_num(image_data, nan=0.0, posinf=0.0, neginf=0.0)
         norm = ImageNormalize(
             image_data,
             interval=PercentileInterval(1, 99),
