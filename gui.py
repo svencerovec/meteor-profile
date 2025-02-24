@@ -1,6 +1,7 @@
 import tkinter as tk
 from tkinter import filedialog, simpledialog, messagebox
 from tkinter import ttk
+import numpy as np
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 from astropy.io import fits
@@ -14,13 +15,14 @@ class TrailProfilerGUI:
     A simple GUI that demonstrates how to load a FITS file, detect trails, and profile them
     using the TrailProfiler class. Users can either select lines automatically (through
     TrailDetector) or enter coordinates manually, then visualize and manipulate the
-    perpendicular brightness profiles in the image.
+    perpendicular brightness profiles in the image. Additionally, the GUI provides controls
+    to load a pickled neural network model and obtain a prediction based on the median profile.
     """
 
     def __init__(self, root):
         self.root = root
-        self.root.title("Trail Profiler Application")
-        self.root.geometry("1100x700")
+        self.root.title("Trail Analysis Application")
+        self.root.geometry("1100x800")
         
         self.fits_file = None
         self.image_data = None
@@ -32,12 +34,15 @@ class TrailProfilerGUI:
         # Profiler for analyzing lines
         self.profiler = None
 
+        # Neural network model (loaded via pickle)
+        self.model = None
+
         # Main UI frames
         self.main_frame = ttk.Frame(root)
         self.main_frame.pack(fill=tk.BOTH, expand=True)
 
         title_label = ttk.Label(
-            self.main_frame, text="Trail Profiler Application",
+            self.main_frame, text="Trail Analysis Application",
             font=("Helvetica", 18, "bold")
         )
         title_label.pack(pady=10)
@@ -93,7 +98,6 @@ class TrailProfilerGUI:
         self.index_entry = ttk.Entry(extra_controls)
         self.index_entry.pack(fill=tk.X, pady=2)
         self.index_entry.insert(0, "Enter Profile Index")
-
         self.plot_profile_button = ttk.Button(
             extra_controls, text="Plot Profile at Index", command=self.plot_profile, state=tk.DISABLED
         )
@@ -122,13 +126,23 @@ class TrailProfilerGUI:
             command=self.update_main_line_plot
         )
         self.show_line_check.pack(fill=tk.X, pady=2)
-        
         self.show_perp_var = tk.BooleanVar(value=False)
         self.show_perp_check = ttk.Checkbutton(
             extra_controls, text="Show perpendicular lines", variable=self.show_perp_var,
             command=self.update_main_line_plot
         )
         self.show_perp_check.pack(fill=tk.X, pady=2)
+        
+        # Neural Network Model Controls
+        nn_controls = ttk.LabelFrame(self.controls_frame, text="Neural Network Model", padding=(10, 5))
+        nn_controls.pack(fill=tk.X, pady=5)
+        self.load_model_button = ttk.Button(nn_controls, text="Load Model", command=self.load_model)
+        self.load_model_button.pack(fill=tk.X, pady=2)
+        self.predict_model_button = ttk.Button(
+            nn_controls, text="Predict on Median Profile",
+            command=self.predict_model, state=tk.DISABLED
+        )
+        self.predict_model_button.pack(fill=tk.X, pady=2)
 
     def disable_profiling_controls(self):
         """
@@ -253,9 +267,7 @@ class TrailProfilerGUI:
                 fig = plt.Figure(figsize=(6, 6))
                 ax = fig.add_subplot(111)
                 ax.imshow(self.image_data, cmap="gray", origin="lower", norm=self.norm)
-
                 if extend_flag.get():
-                    # Use extend_line_to_image_edges if we have a profiler; otherwise create a temp profiler
                     if self.profiler:
                         extended_line = self.profiler.extend_line_to_image_edges(
                             selected_line[0], selected_line[1],
@@ -286,7 +298,6 @@ class TrailProfilerGUI:
                 ax.set_title("Detailed Line View")
                 ax.set_xlabel("X pixel")
                 ax.set_ylabel("Y pixel")
-
                 border_frame = ttk.Frame(view_popup, borderwidth=2, relief="solid")
                 border_frame.pack(fill=tk.BOTH, expand=True)
                 canvas = FigureCanvasTkAgg(fig, master=border_frame)
@@ -322,7 +333,6 @@ class TrailProfilerGUI:
                     point2=(chosen_line[2], chosen_line[3])
                 )
 
-                # Enable profiling controls
                 self.analyze_button.config(state=tk.NORMAL)
                 self.plot_main_line_button.config(state=tk.NORMAL)
                 self.plot_all_lines_button.config(state=tk.NORMAL)
@@ -331,7 +341,6 @@ class TrailProfilerGUI:
                 self.plot_median_profile_button.config(state=tk.NORMAL)
                 self.analyze_profile_button.config(state=tk.NORMAL)
                 self.plot_all_profiles_button.config(state=tk.NORMAL)
-
                 self.update_main_line_plot()
                 popup.destroy()
 
@@ -441,31 +450,47 @@ class TrailProfilerGUI:
 
     def analyze_profile(self):
         """
-        Analyze the median brightness profile by computing:
-        - AUC using the profile's max,
-        - AUC using the global image max,
-        - FWHM with half max factors of 0.5 and 0.95.
+        Analyze the median brightness profile by computing several metrics:
+        - FWHM at 0.5 (default FWHM)
+        - FWHM at 0.7 (Spread)
+        - FWHM at 0.95 (Extension)
+        - Compactness: the ratio (FWHM0.7)/(FWHM0.95)
+        - AUC_med: area under the curve normalized by the median of the FITS image
+        - AUC_peak: area under the curve normalized by the peak of the median profile
+        - AUC_full: area under the curve normalized by the global maximum of the FITS image
+        - Kurtosis: the weighted kurtosis of the profile
+        - Gaussian Kurtosis: kurtosis after fitting the median profile to a Gaussian
 
-        Displays the results in a popup.
+        Displays the computed metrics in a popup.
         """
         if not self.profiler or not self.profiler.brightness_profiles:
             messagebox.showerror("Error", "No brightness profiles available for analysis.")
             return
-        
-        # Retrieve the median profile from the new class
+
         median_profile = self.profiler.calculate_median_profile()
 
-        # Calculate metrics
-        auc_local = self.profiler.calculate_auc(median_profile)
-        auc_global = self.profiler.calculate_auc_global_max(median_profile)
-        fwhm_05 = self.profiler.calculate_fwhm(median_profile, half_max_factor=0.5)
-        fwhm_095 = self.profiler.calculate_fwhm(median_profile, half_max_factor=0.95)
+        fwhm_default = self.profiler.calculate_fwhm_default(median_profile)
+        fwhm_07 = self.profiler.calculate_fwhm_07(median_profile)
+        fwhm_095 = self.profiler.calculate_fwhm_095(median_profile)
+        compactness = fwhm_07 / fwhm_095 if fwhm_095 != 0 else 0
+
+        auc_med = self.profiler.calculate_auc_med(median_profile)
+        auc_peak = self.profiler.calculate_auc_peak(median_profile)
+        auc_full = self.profiler.calculate_auc_full(median_profile)
+
+        kurtosis_val = self.profiler.calculate_kurtosis(median_profile)
+        gaussian_kurtosis_val = self.profiler.calculate_gaussian_kurtosis(median_profile)
 
         message = (
-            f"AUC (using profile max): {auc_local:.2f}\n"
-            f"AUC (using image global max): {auc_global:.2f}\n"
-            f"FWHM (0.5 factor): {fwhm_05:.2f}\n"
-            f"FWHM (0.95 factor): {fwhm_095:.2f}"
+            f"FWHM (0.5 factor): {fwhm_default:.2f}\n"
+            f"FWHM (0.7 factor): {fwhm_07:.2f}\n"
+            f"FWHM (0.95 factor): {fwhm_095:.2f}\n"
+            f"Compactness (FWHM0.7/FWHM0.95): {compactness:.2f}\n"
+            f"AUC (median normalized): {auc_med:.2f}\n"
+            f"AUC (peak normalized): {auc_peak:.2f}\n"
+            f"AUC (global max normalized): {auc_full:.2f}\n"
+            f"Kurtosis: {kurtosis_val:.2f}\n"
+            f"Gaussian Kurtosis: {gaussian_kurtosis_val:.2f}"
         )
         messagebox.showinfo("Profile Analysis", message)
 
@@ -498,6 +523,47 @@ class TrailProfilerGUI:
         canvas.draw()
         canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
+    def load_model(self):
+        """
+        Load a pickled neural network model from disk and enable the prediction button.
+        """
+        model_file = filedialog.askopenfilename(
+            initialdir=".", title="Select Model File",
+            filetypes=[("Pickle files", "*.pkl")]
+        )
+        if model_file:
+            try:
+                import pickle
+                with open(model_file, "rb") as f:
+                    self.model = pickle.load(f)
+                print(f"Loaded model from {model_file}")
+                self.predict_model_button.config(state=tk.NORMAL)
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load model: {e}")
+
+    def predict_model(self):
+        """
+        Predict whether the median brightness profile corresponds to a meteor,
+        using the loaded neural network model. Displays the prediction result.
+        """
+        if not self.model:
+            messagebox.showerror("Error", "No model loaded.")
+            return
+        if not self.profiler:
+            messagebox.showerror("Error", "No profiler available. Load a FITS file and perform detection/profiling.")
+            return
+        try:
+            median_profile = self.profiler.calculate_median_profile()
+            X_input = np.array(median_profile).reshape(1, -1)
+            if hasattr(self.model, "predict_proba"):
+                proba = self.model.predict_proba(X_input)[0][1]
+                result_text = f"Predicted probability of meteor: {proba:.3f}"
+            else:
+                label = self.model.predict(X_input)[0]
+                result_text = f"Predicted label: {label}"
+            messagebox.showinfo("Prediction Result", result_text)
+        except Exception as e:
+            messagebox.showerror("Error", f"Prediction failed: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
