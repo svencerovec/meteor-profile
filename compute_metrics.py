@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 compute_metrics.py
 
@@ -23,7 +22,7 @@ import sys
 import argparse
 import numpy as np
 
-from trail_profiler_2 import TrailProfiler
+from trail_profiler import TrailProfiler
 
 def parse_args():
     parser = argparse.ArgumentParser(
@@ -50,7 +49,6 @@ def process_prediction_file(fits_folder, pred_file="prediction_results.txt", out
         if not line:
             continue
         parts = line.split()
-        # Expecting: filename x1 y1 x2 y2 model_score (we use only the first five tokens)
         if len(parts) < 5:
             print(f"[WARNING] Skipping malformed line: {line}")
             continue
@@ -66,8 +64,7 @@ def process_prediction_file(fits_folder, pred_file="prediction_results.txt", out
         if not os.path.exists(full_path):
             print(f"[WARNING] FITS file not found: {full_path}. Skipping.")
             continue
-        
-        # Instantiate the profiler and calculate the median profile.
+
         try:
             profiler = TrailProfiler(full_path, (x1, y1), (x2, y2))
             if not profiler.brightness_profiles:
@@ -78,7 +75,6 @@ def process_prediction_file(fits_folder, pred_file="prediction_results.txt", out
             print(f"[WARNING] Error processing {full_path}: {e}. Skipping.")
             continue
         
-        # Compute metrics using the new methods.
         try:
             fwhm_default = profiler.calculate_fwhm_default(median_profile)
             fwhm_07 = profiler.calculate_fwhm_07(median_profile)
@@ -103,7 +99,6 @@ def process_prediction_file(fits_folder, pred_file="prediction_results.txt", out
         results.append(result_line)
         print(f"[INFO] Processed {filename}")
     
-    # Write all results to the output file in write mode.
     with open(out_file, "w") as f:
         for res in results:
             f.write(res + "\n")

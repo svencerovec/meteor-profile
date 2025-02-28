@@ -7,8 +7,8 @@ import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.visualization import ImageNormalize, PercentileInterval, SqrtStretch
 
-from trail_detector_3 import TrailDetector
-from trail_profiler_2 import TrailProfiler
+from trail_detector import TrailDetector
+from trail_profiler import TrailProfiler
 
 class TrailProfilerGUI:
     """

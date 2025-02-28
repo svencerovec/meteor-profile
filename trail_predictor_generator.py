@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 """
 train_full_model.py
 
@@ -8,7 +6,7 @@ This script trains an MLP model on all lines from:
 - not_meteors.txt (label=0)
 
 No train/test split is performed: the entire dataset is used for training.
-Lines producing invalid or empty profiles are skipped. Minimal logging is provided.
+Lines producing invalid or empty profiles are skipped.
 
 Usage:
     python train_full_model.py /path/to/fits/folder
@@ -23,8 +21,7 @@ import pickle
 import numpy as np
 from sklearn.neural_network import MLPClassifier
 
-# Adjust this import so that it points to your TrailProfiler location
-from trail_profiler_2 import TrailProfiler
+from trail_profiler import TrailProfiler
 
 METEORS_TXT = "meteors.txt"
 NOT_METEORS_TXT = "not_meteors.txt"
@@ -128,7 +125,6 @@ def build_dataset(lines):
 def main():
     args = parse_arguments()
 
-    # Load lines from both text files (all data, no split)
     meteor_lines = load_lines(METEORS_TXT, label=1, fits_folder=args.fits_folder)
     not_meteor_lines = load_lines(NOT_METEORS_TXT, label=0, fits_folder=args.fits_folder)
     all_lines = meteor_lines + not_meteor_lines
@@ -142,29 +138,23 @@ def main():
         print("[ERROR] No valid profiles built. Exiting.")
         sys.exit(1)
 
-    # Check if profiles have uniform length. If multiple lengths, you may need to pad/trim.
     lengths = {len(p) for p in X_raw}
     if len(lengths) > 1:
-        print(f"[WARNING] Multiple profile lengths detected: {lengths}. "
-              "Consider padding or trimming if needed.")
+        print(f"[WARNING] Multiple profile lengths detected: {lengths}. ")
 
-    # Convert data to a 2D numpy array
     X_data = np.array(X_raw, dtype=object)
     y_data = np.array(y_raw)
 
-    # Train an MLP with minimal logging, possibly increasing max_iter to avoid convergence warnings
     clf = MLPClassifier(
         hidden_layer_sizes=(64, 32),
         activation='relu',
         solver='adam',
-        max_iter=1000,  # Increased to reduce "not converged" warnings
+        max_iter=1000,
         random_state=42
     )
     clf.fit(X_data.tolist(), y_data)  
-    # If you used pad/trim, you'd do X_data = pad_profiles(X_raw, max_len) and then fit that
     print("[INFO] Training complete. Model is now fit to the entire dataset.")
 
-    # Save the model to disk with pickle
     with open(MODEL_FILENAME, "wb") as f:
         pickle.dump(clf, f)
 

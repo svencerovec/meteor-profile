@@ -32,8 +32,7 @@ from collections import defaultdict
 from sklearn.neural_network import MLPClassifier
 from sklearn.metrics import classification_report
 
-# Adjust the import as needed to locate your TrailProfiler implementation
-from trail_profiler_2 import TrailProfiler
+from trail_profiler import TrailProfiler
 
 def parse_args():
     """
@@ -107,15 +106,12 @@ def extract_filter(fits_filepath):
 def main():
     args = parse_args()
 
-    # The text files must exist in the current directory or a known location
     meteor_file = "meteors.txt"
     not_meteor_file = "not_meteors.txt"
 
-    # Load lines from both files
     meteor_lines = load_lines_from_file(meteor_file, label=1, fits_folder=args.fits_folder)
     not_meteor_lines = load_lines_from_file(not_meteor_file, label=0, fits_folder=args.fits_folder)
 
-    # Group lines by filter
     data_by_filter = defaultdict(list)
     for entry in (meteor_lines + not_meteor_lines):
         fits_file, x1, y1, x2, y2, label = entry
@@ -125,7 +121,6 @@ def main():
             continue
         data_by_filter[flt].append(entry)
 
-    # Validate that each filter has exactly 40 lines total (20 meteor + 20 not meteor)
     for flt in ['u','g','r','i','z']:
         lines_for_filter = data_by_filter[flt]
         if len(lines_for_filter) != 40:
@@ -133,7 +128,6 @@ def main():
             print("[INFO] Exiting.")
             sys.exit(1)
 
-    # For each filter, split lines into training (10 meteor + 10 not_meteor) and test (10 meteor + 10 not_meteor)
     train_data = []
     test_data = []
     for flt in ['u','g','r','i','z']:
@@ -141,7 +135,6 @@ def main():
         meteor_subset = [x for x in lines_for_filter if x[5] == 1]
         not_meteor_subset = [x for x in lines_for_filter if x[5] == 0]
 
-        # randomize
         random.shuffle(meteor_subset)
         random.shuffle(not_meteor_subset)
 
@@ -153,7 +146,6 @@ def main():
         train_data.extend(train_meteor + train_not_meteor)
         test_data.extend(test_meteor + test_not_meteor)
 
-    # Utility function to get median profile from a line
     def get_median_profile(line_info):
         fits_path, x1, y1, x2, y2, label = line_info
         if not os.path.exists(fits_path):
@@ -177,10 +169,9 @@ def main():
             if profile is None:
                 continue
             X_list.append(profile)
-            y_list.append(entry[5])  # label
+            y_list.append(entry[5])
         return X_list, y_list
 
-    # Build train/test sets
     X_train_raw, y_train = build_dataset(train_data)
     X_test_raw, y_test = build_dataset(test_data)
 
@@ -191,7 +182,6 @@ def main():
         print("[ERROR] No testing samples found. Exiting.")
         sys.exit(1)
 
-    # Determine max profile length to unify feature vector lengths
     all_profiles = X_train_raw + X_test_raw
     max_len = max(len(p) for p in all_profiles)
     print(f"[INFO] Maximum profile length found among all samples: {max_len}")
@@ -212,7 +202,6 @@ def main():
     y_train = np.array(y_train)
     y_test = np.array(y_test)
 
-    # Train a simple MLP
     clf = MLPClassifier(
         hidden_layer_sizes=(64, 32),
         activation='relu',
@@ -224,7 +213,6 @@ def main():
     clf.fit(X_train, y_train)
     print("[INFO] Finished training the MLP model on the training set.")
 
-    # Evaluate
     y_pred = clf.predict(X_test)
     print("\nClassification Report:")
     print(classification_report(y_test, y_pred, target_names=["Not Meteor", "Meteor"]))
