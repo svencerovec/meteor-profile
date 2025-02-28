@@ -1,5 +1,5 @@
 """
-train_full_model.py
+trail_classifier_generator.py
 
 This script trains an MLP model on all lines from:
 - meteors.txt (label=1)
@@ -9,7 +9,7 @@ No train/test split is performed: the entire dataset is used for training.
 Lines producing invalid or empty profiles are skipped.
 
 Usage:
-    python train_full_model.py /path/to/fits/folder
+    python trail_classifier_generator.py /path/to/fits/folder
 
 The resulting model is saved as 'full_meteor_model.pkl'.
 """

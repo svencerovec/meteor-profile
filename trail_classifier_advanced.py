@@ -1,5 +1,5 @@
 """
-trail_predictor_advanced.py
+trail_classifier_advanced.py
 
 Script that:
 1. Loads an MLP model from 'full_meteor_model.pkl' in the current folder.
@@ -15,7 +15,7 @@ Script that:
 7. Handles exceptions in detection/profiling, logs minimal warnings, and continues.
 
 Usage:
-    python predict_meteors_resume.py /path/to/folder
+    python trail_classifier_advanced.py /path/to/folder
 """
 
 import os

@@ -1,7 +1,5 @@
-#!/usr/bin/env python3
-
 """
-meteor_classifier.py
+trail_classifier.py
 
 This script uses two text files (meteors.txt and not_meteors.txt), each with 100 lines of
 the form "file.fits x1 y1 x2 y2", where each file has exactly 20 lines per filter (u,g,r,i,z).
@@ -14,13 +12,11 @@ for classification. Finally, we evaluate the model on the test set with a classi
 report.
 
 Usage Example:
-    python meteor_classifier.py /path/to/fits/folder
+    python trail_classifier.py /path/to/fits/folder
 
 Requires:
 - meteors.txt
 - not_meteors.txt
-- scikit-learn
-- A defined TrailProfiler class with "standard settings" 
 """
 
 import os
