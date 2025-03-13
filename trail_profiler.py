@@ -34,7 +34,6 @@ class TrailProfiler:
         self.line_coordinates = []
 
         self._load_fits_data()
-        self._create_output_dir()
         self._sample_perpendicular_profiles()
 
     def _load_fits_data(self):
@@ -137,6 +136,7 @@ class TrailProfiler:
         plt.grid()
 
         if save_plot:
+            self._create_output_dir()
             outpath = os.path.join(self.output_dir, f"{filename}.png")
             plt.savefig(outpath, dpi=300, bbox_inches="tight")
             print(f"Perpendicular profiles plot saved to {outpath}")
@@ -163,6 +163,7 @@ class TrailProfiler:
         plt.legend()
 
         if save_plot:
+            self._create_output_dir()
             outpath = os.path.join(self.output_dir, f"{filename}.png")
             plt.savefig(outpath, dpi=300, bbox_inches="tight")
             print(f"Main line plot saved to {outpath}")
@@ -194,6 +195,7 @@ class TrailProfiler:
         plt.legend(loc="upper right", fontsize="small")
 
         if save_plot:
+            self._create_output_dir()
             outpath = os.path.join(self.output_dir, f"{filename}.png")
             plt.savefig(outpath, dpi=300, bbox_inches="tight")
             print(f"All perpendicular lines plot saved to {outpath}")
@@ -241,6 +243,7 @@ class TrailProfiler:
         plt.grid()
 
         if save_plot:
+            self._create_output_dir()
             outpath = os.path.join(self.output_dir, f"{filename}.png")
             plt.savefig(outpath, dpi=300, bbox_inches="tight")
             print(f"Median profile plot saved to {outpath}")
@@ -433,6 +436,7 @@ class TrailProfiler:
         plt.legend()
         plt.grid()
         if save_plot:
+            self._create_output_dir()
             outpath = os.path.join(self.output_dir, f"{filename}_index_{index}.png")
             plt.savefig(outpath, dpi=300, bbox_inches="tight")
             print(f"Profile {index} plot saved to {outpath}")
@@ -459,6 +463,7 @@ class TrailProfiler:
         plt.ylabel("Y Pixel")
         plt.legend()
         if save_plot:
+            self._create_output_dir()
             outpath = os.path.join(self.output_dir, f"{filename}_index_{index}.png")
             plt.savefig(outpath, dpi=300, bbox_inches="tight")
             print(f"Line {index} plot saved to {outpath}")
